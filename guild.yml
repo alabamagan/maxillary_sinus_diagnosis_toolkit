@@ -1,0 +1,81 @@
+image_preprocess:
+  description: Preprocessing images, unify their spacing.
+  main: msdtk.scripts.preprocessing --verbose
+  flags:
+    input-img: ""
+    input-gt: ""
+    output: ""
+  sourcecode:
+    select:
+      - exclude:
+          dir: 'Sinus'
+      - exclude:
+          dir: 'Backup'
+      - exclude:
+          dir: '__pycache__'
+      - '*.py'
+      - '*.pyx'
+      - '*.txt'
+      - '*.so'
+
+train_s1:
+  description: Train the network for the first step of the algorithm, i.e. segmentation of air-space.
+  main: msdtk.scripts.pmi_wrapper --verbose --config=./pmi_config/Seg_S1.ini
+  flags:
+    lr: 1E-3
+    batch-size: 4
+    epoch: 35
+    override: ""
+  output-scalars:
+    loss/loss: 'EpochLoss: (\value)'
+    perf/accuracy: 'ACC: (\value)'
+    perf/dsc: 'DSC: (\value)'
+    loss/validation_loss: 'VAL: (\value)'
+    step: 'Epoch (\step)'
+    step_lr: 'LR: (\value)'
+  sourcecode:
+    root: ./
+    select:
+      - exclude:
+          dir: ['Sinus', 'Backup']
+          file: [ '*.pt', '*.log']
+      - '*.py'
+      - '*.pyx'
+      - '*.txt'
+      - '*.so'
+      - '*.ini'
+  requires:
+    - file: './Sinus'
+    - file: './pmi_config'
+
+
+train_s2:
+  description: Train the network for the second step of the algorithm, i.e. segmentation of lesion.
+  main: msdtk.scripts.pmi_wrapper --verbose --config=./pmi_config/Seg_S2.ini
+  flags:
+    lr: 1E-4
+    batch-size: 12
+    epoch: 50
+    override: ""
+  output-scalars:
+    loss/loss: 'EpochLoss: (\value)'
+    perf/accuracy: 'ACC: (\value)'
+    perf/dsc: 'DSC: (\value)'
+    loss/validation_loss: 'VAL: (\value)'
+    step: 'Epoch (\step)'
+    step_lr: 'LR: (\value)'
+  sourcecode:
+    select:
+      - exclude:
+          dir: [ 'Sinus', 'Backup' ]
+          file: [ '*.pt', '*.log']
+      - '*.py'
+      - '*.pyx'
+      - '*.txt'
+      - '*.so'
+      - '*.ini'
+  requires:
+    - file: './Sinus'
+    - file: './pmi_config'
+
+
