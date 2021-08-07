@@ -19,6 +19,8 @@ def crop_sinuses():
     parser.add_argument('--save-bounds', action='store_true', dest='save',
                         help="If true, bounds of the input computed will be saved as a text file "
                              "in the same directory as the outputs with filename bounds.txt")
+    parser.add_argument('--skip', action='store_true',
+                        help="If true, ids that are existing in the output directory of the first pair are skipped")
     args = parser.parse_args()
 
     assert len(args.input_dirs) == len(args.output_dirs), "Different number of input and output directories."
@@ -27,5 +29,7 @@ def crop_sinuses():
     batch_crop_sinuses(dir_pairs,
                        num_workers=args.numworker,
                        load_bounds=args.load,
-                       save_bounds=args.save)
+                       save_bounds=args.save,
+                       idglobber=args.idglobber,
+                       skip_exist=args.skip)
 
