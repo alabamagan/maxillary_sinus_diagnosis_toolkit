@@ -64,6 +64,9 @@ def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
         existing_ids = get_ids_from_files(first_out_dir, return_dict=False)
         for _id in existing_ids:
             idlist.remove(_id)
+        if len(idlist) == 0:
+            logger.warning("Nothing left to crop!")
+            return 0
 
     if load_bounds is None:
         res = find_sinus_bounds(first_set)
@@ -85,6 +88,7 @@ def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
         df.to_csv(os.path.join(first_out_dir, 'cropping_index.csv'))
 
     crop_images_with_bounds(dir_pairs, first_set, idlist, res)
+    return 0
 
 
 def get_LR_axis(direction_mat: np.ndarray) -> int:
