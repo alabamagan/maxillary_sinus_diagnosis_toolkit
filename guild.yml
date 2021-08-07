@@ -20,12 +20,13 @@ image_preprocess:
 
 train_s1:
   description: Train the network for the first step of the algorithm, i.e. segmentation of air-space.
-  main: msdtk.scripts.pmi_wrapper --verbose --config=./pmi_config/Seg_S1.ini
+  main: msdtk.scripts.pmi_wrapper --verbose
   flags:
     lr: 1E-3
     batch-size: 4
     epoch: 35
     override: ""
+    config: "./pmi_config/Seg_S1.ini"
   output-scalars:
     loss/loss: 'EpochLoss: (\value)'
     perf/accuracy: 'ACC: (\value)'
@@ -51,12 +52,13 @@ train_s1:
 
 train_s2:
   description: Train the network for the second step of the algorithm, i.e. segmentation of lesion.
-  main: msdtk.scripts.pmi_wrapper --verbose --config=./pmi_config/Seg_S2.ini
+  main: msdtk.scripts.pmi_wrapper --verbose
   flags:
     lr: 1E-4
     batch-size: 12
     epoch: 50
     override: ""
+    config: "./pmi_config/Seg_S2.ini"
   output-scalars:
     loss/loss: 'EpochLoss: (\value)'
     perf/accuracy: 'ACC: (\value)'
