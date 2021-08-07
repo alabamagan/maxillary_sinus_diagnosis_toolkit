@@ -101,6 +101,13 @@ def data_preparation(s1_res, s2_res, gt=None):
 class Seg2Diag(object):
     def __init__(self):
         super(Seg2Diag, self).__init__()
+
+        # This default dict maps the keys to the column name of the target ground-truth in `df`
+        self.default_dict = {
+            'MT': 'Mucosal Thickening',
+            'MRC': 'Cyst',
+            # 'Healthy': 'Healthy'
+        }
         pass
 
     def fit(self, df: pd.DataFrame, params=None) -> List[Pipeline]:
@@ -108,12 +115,7 @@ class Seg2Diag(object):
         For training, the input dataframe should contain the MT and MRC status in the first
         four columns, the rest are the features used for training.
         """
-        # This default dict maps the keys to the column name of the target ground-truth in `df`
-        self.default_dict = {
-            'MT': 'Mucosal Thickening',
-            'MRC': 'Cyst',
-            # 'Healthy': 'Healthy'
-        }
+
 
         # Drop Ground truth status to get the features
         X = df.drop(df.columns[:4], axis=1)
@@ -148,7 +150,7 @@ class Seg2Diag(object):
 
     def load(self, infname):
         _loaded_content = load(infname)
-        for key in _load_content:
+        for key in _loaded_content:
             self.__setattr__(key, _loaded_content[key])
 
     def compute_cutoff(self,
@@ -198,6 +200,8 @@ class Seg2Diag(object):
         r"""
         Plot the performance of the model on the given dataset, including t
         """
+        import matplotlib.pyplot as plt
+
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
