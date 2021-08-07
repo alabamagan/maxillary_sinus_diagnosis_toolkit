@@ -2,17 +2,27 @@ import SimpleITK as sitk
 import numpy as np
 import os
 import multiprocessing as mpi
+
+from pathlib import Path
+from typing import Union, Iterable, List, Pattern
+
 from ast import literal_eval as eval
 from typing import *
 from pytorch_med_imaging.med_img_dataset import ImageDataSet
+from pytorch_med_imaging.utils import get
 from pytorch_med_imaging.logger import Logger
+
+from ..utils import get_ids_from_files
+
 
 __all__ = ['batch_crop_sinuses', 'crop_sinuses']
 
-def batch_crop_sinuses(dir_pairs: List[Iterable[str]],
+def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
+                       idglobber: Pattern = "^[0-9]+",
                        num_workers: int = 8,
                        load_bounds: str = None,
-                       save_bounds: bool = False):
+                       save_bounds: bool = False,
+                       skip_exist: bool = False):
     r"""
     This function can be called to crop the sinuses from the CBCT images using their segmentation.
     This assumes the two sinus (at list the air space within) are well segmented and each input image
@@ -28,8 +38,10 @@ def batch_crop_sinuses(dir_pairs: List[Iterable[str]],
     At least one pair should be given.
 
     Args:
-        dir_pairs (list of tuples): Directory pairs.
-        bounds (str or list): Directory of csv that hold all the boundaries to crop.
+        dir_pairs (list of tuples):
+            Directory pairs, structured like: [(input1, output1), (input2, output2), ...]
+        bounds (str or list):
+            Directory of csv that hold all the boundaries to crop.
     """
     assert isinstance(dir_pairs, list)
 
@@ -41,11 +53,17 @@ def batch_crop_sinuses(dir_pairs: List[Iterable[str]],
 
     # First pair is the referenced pair, must be image labels
     first_in_dir, first_out_dir = dir_pairs[0]
-    first_set = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber="^[0-9]+", debugmode=False)
+    first_set = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False)
     idlist = first_set.get_unique_IDs()
 
     logger.debug(f"Globbed ids: {idlist}")
 
+    # Glob ids existing in the output directory and remove it from the idlist
+    if skip_exist:
+        logger.info(f"Skip existing.")
+        existing_ids = get_ids_from_files(first_out_dir, return_dict=False)
+        for _id in existing_ids:
+            idlist.remove(_id)
 
     if load_bounds is None:
         res = find_sinus_bounds(first_set)
@@ -199,18 +217,3 @@ def find_sinus_bounds(input_set: ImageDataSet,
     pool.join()
     return res
 
-if __name__ == '__main__':
-    # batch_crop_sinuses([('../../Sinus/0B.Segment/Remapped', '../../Sinus/0B.Segment/Remapped_cropped')])
-    batch_crop_sinuses([('../../Sinus/98.Output/SinusSeg_B00-v1.0_train',
-                         '../../Sinus/98.Output/SinusSeg_B00-v1.0_train/Cropped_CNN'),
-                        ('../../Sinus/0B.Segment/Remapped',
-                         '../../Sinus/98.Output/SinusSeg_B00-v1.0_train/Cropped_GT'),
-                        ('../../Sinus/0B.Segment/Lesions-only',
-                         '../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0_train/Cropped_GT'),
-                        ('../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0_train/',
-                         '../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0_train/Cropped_CNN')])
-    batch_crop_sinuses([('../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0/',
-                         '../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0/Cropped_CNN'),
-                        ('../../Sinus/0B.Segment/Lesions-only',
-                         '../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0/Cropped_GT')]
-                       )
