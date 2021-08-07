@@ -9,7 +9,6 @@ from typing import Union, Iterable, List, Pattern
 from ast import literal_eval as eval
 from typing import *
 from pytorch_med_imaging.med_img_dataset import ImageDataSet
-from pytorch_med_imaging.utils import get
 from pytorch_med_imaging.logger import Logger
 
 from ..utils import get_ids_from_files

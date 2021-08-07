@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-from typing import List, Union, Iterable
+from typing import List, Union, Iterable, Optional, Pattern
 
 __all__ = ['norm_df_cols', 'get_ids_from_files']
 
