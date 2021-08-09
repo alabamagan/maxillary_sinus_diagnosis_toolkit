@@ -10,7 +10,7 @@ from ast import literal_eval as eval
 from typing import *
 from pytorch_med_imaging.med_img_dataset import ImageDataSet
 from pytorch_med_imaging.logger import Logger
-
+from pathlib import Path
 from ..utils import get_ids_from_files
 
 
@@ -18,6 +18,7 @@ __all__ = ['batch_crop_sinuses', 'crop_sinuses']
 
 def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
                        idglobber: Pattern = "^[0-9]+",
+                       idlist: Union[Iterable[str], Union[str, Path]] = None,
                        num_workers: int = 8,
                        load_bounds: str = None,
                        save_bounds: bool = False,
@@ -52,8 +53,25 @@ def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
 
     # First pair is the referenced pair, must be image labels
     first_in_dir, first_out_dir = dir_pairs[0]
-    first_set = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False)
-    idlist = first_set.get_unique_IDs()
+    if idlist is None:
+        first_set = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False)
+        idlist = first_set.get_unique_IDs()
+    else:
+        if isinstance(idlist, str):
+            # Check if its a file or idlist csv string, if its a file, ignore, otherwise, do comma seperation.
+            try:
+                if not Path(idlist).is_file():
+                    idlist = [r.rstrip() for r in idlist.split(',')]
+                else:
+                    idlist = Path(idlist).resolve()
+            except OSError:
+                idlist = [r.rstrip() for r in idlist.split(',')]
+            except:
+                logger.exception("Unexpected error occured during crop sinus.")
+
+        first_seg = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False,
+                                 filtermode='idlist', idlist=idlist)
+        idlist = first_set.get_unique_IDs()
 
     logger.debug(f"Globbed ids: {idlist}")
 
