@@ -39,7 +39,7 @@ def get_ids_from_files(files: Iterable[Union[str, Path]],
 
     out_dict = {}
     for f in files:
-        mo = re.search(idglobber, f)
+        mo = re.search(idglobber, os.path.basename(f))
         id = mo.group() if mo is not None else 'Error'
 
         if id in out_dict:
@@ -90,6 +90,8 @@ def get_files_with_id(directory: Union[str, Path],
             print("Warning, there are multiple files with the same ID.")
         if _val is None:
             print(f"Warning, can't find file with ID {keys} in target folder.")
+        else:
+            _val = os.path.join(directory, _val)
         out_dict[keys] = _val
 
     if return_dict:

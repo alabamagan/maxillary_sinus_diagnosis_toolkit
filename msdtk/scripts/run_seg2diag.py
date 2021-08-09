@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-import pathlib
+from pathlib import Path
 from .console_entry import ConsoleEntry
 from ..pipeline.steps import Seg2Diag, data_preparation
 
@@ -9,8 +9,8 @@ __all__ = ['train_seg2diag', 'inference_seg2diag']
 def train_seg2diag():
     parser = ConsoleEntry('OLngv')
     parser.add_argument('-s1', '--s1-res', action='store', 
-                        help="Label statistics of stage 1 outputs (cropped).")
-    parser.add_argument('-s2', '--s2-res', action='store', 
+                        help="Label statistics of stage 1 outputs (cropped) or from compbined s1 and s2 results.")
+    parser.add_argument('-s2', '--s2-res', action='store', default=None,
                         help='Label statistics of stage 2 outputs (cropped).')
     parser.add_argument('-gt', '--ground-truth', action='store',
                         help='CSV or Excel file that contains the ground truth.')
@@ -19,7 +19,6 @@ def train_seg2diag():
     args = parser.parse_args()
 
     # Check data availability
-    assert os.path.isfile(args.s1_res) and os.path.isfile(args.s2_res), "Inputs are not correctly specified."
     assert os.path.isfile(args.ground_truth), f"Can't open specified ground-truth file at: {args.ground_truth}"
 
     df = data_preparation(args.s1_res, args.s2_res, args.ground_truth)
@@ -38,7 +37,7 @@ def inference_seg2diag():
     parser = ConsoleEntry('OLngv')
     parser.add_argument('-s1', '--s1-res', action='store',
                         help="Label statistics of stage 1 outputs (cropped).")
-    parser.add_argument('-s2', '--s2-res', action='store',
+    parser.add_argument('-s2', '--s2-res', action='store', default=None,
                         help='Label statistics of stage 2 outputs (cropped).')
     parser.add_argument('-i', '--saved-model', action='store',
                         help='Directory to model.')
@@ -53,7 +52,7 @@ def inference_seg2diag():
     args = parser.parse_args()
 
     # Check data availability
-    assert os.path.isfile(args.s1_res) and os.path.isfile(args.s2_res), "Inputs are not correctly specified."
+    assert os.path.isfile(args.s1_res) and os.path.isfile(args.saved_model), "Inputs are not correctly specified."
 
     df = data_preparation(args.s1_res, args.s2_res)
     parser.logger.info("Trying to fit data.")
@@ -74,8 +73,13 @@ def inference_seg2diag():
         if not args.use_training_cutoff:
             model.compute_cutoff(df, df_gt)
 
-        if args.plot:
-            model.plot_model_results(df, df_gt)
+        if args.outfile is not None:
+            roc_fname = Path(args.outfile)
+            roc_fname = roc_fname.parent.joinpath('ROC_results.png')
+            parser.logger.info(f"Writing ROC plot to: {roc_fname}")
+        else:
+            roc_fname = None
+        model.plot_model_results(df, df_gt, show_plot=args.plot, save_png=roc_fname)
 
 
     # Generate prediction report
