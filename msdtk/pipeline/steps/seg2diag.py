@@ -2,16 +2,20 @@ from sklearn import svm, linear_model
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report, roc_auc_score, roc_curve
+from pathlib import Path
+
 import pandas as pd
 import itertools
+
 from joblib import dump, load
 from msdtk.utils import norm_df_cols
-from typing import List
+from typing import List, Union, Optional, Iterable
+
 import numpy as np
 
 __all__ = ['data_preparation', 'Seg2Diag']
 
-def data_preparation(s1_res, s2_res, gt=None):
+def data_preparation(s1_res, s2_res=None, gt=None):
     r"""
     Prepare datasheet used for training/inference.
 
@@ -70,30 +74,62 @@ def data_preparation(s1_res, s2_res, gt=None):
 
     """
     def create_mindex(data_col):
-        return pd.MultiIndex.from_tuples([o.split('_') for o in data_col], 
+        return pd.MultiIndex.from_tuples([o.split('_') for o in data_col],
                                          names=('Patient ID', 'Right/Left'))
 
-    s1df = pd.read_csv(s1_res, index_col=0) if isinstance(s1_res, str) else s1_res
-    s1df.drop(s1df.index[-2:], inplace=True)
-    s1df.index = create_mindex(s1df.index)
-    # Only retain air space volumes and perimeter
-    s1df = s1df[['Volume_1', 'Perimeter_1']]
-    s1df.columns = ['Volume_Air', 'Perimeter_Air']
 
-    s2df = pd.read_csv(s2_res, index_col=0) if isinstance(s2_res, str) else s2_res
-    s2df.drop(s2df.index[-2:], inplace=True)
-    s2df.index = create_mindex(s2df.index)
-    s2df = s2df[['Volume_1', 'Volume_2', 'Perimeter_1', 'Perimeter_2', 'Roundness_1', 'Roundness_2']]
-    s2df.columns = ['Volume_MT', 'Volume_MRC', 'Perimeter_MT', 'Perimeter_MRC', 'Roundness_MT', 'Roundness_MRC']
 
-    if not gt is None:
-        gtdf = pd.read_csv(gt) if isinstance(gt, str) else gt
-        gtdf = gtdf.astype({'Patient ID': str})
-        gtdf.set_index(['Patient ID', 'Right/Left'], drop=True, inplace=True)
+    if s2_res is not None:
+        s1df = pd.read_csv(s1_res, index_col=0) if isinstance(s1_res, str) else s1_res
+        s1df.drop('sum', inplace=True)
+        s1df.drop('avg', inplace=True)# Drop sum and avg
+        s1df.index = create_mindex(s1df.index)
+        # Only retain air space volumes and perimeter
+        s1df = s1df[['Volume_1', 'Perimeter_1']]
+        s1df.columns = ['Volume_Air', 'Perimeter_Air']
 
-        df = gtdf.join(s1df, how='right').join(s2df)
+        s2df = pd.read_csv(s2_res, index_col=0) if isinstance(s2_res, str) else s2_res
+        s2df.drop('sum', inplace=True)
+        s2df.drop('avg', inplace=True)
+        s2df.index = create_mindex(s2df.index)
+        s2df = s2df[['Volume_1', 'Volume_2', 'Perimeter_1', 'Perimeter_2', 'Roundness_1', 'Roundness_2']]
+        s2df.columns = ['Volume_MT', 'Volume_MRC', 'Perimeter_MT', 'Perimeter_MRC', 'Roundness_MT', 'Roundness_MRC']
+
+        if not gt is None:
+            gtdf = pd.read_csv(gt) if isinstance(gt, str) else gt
+            gtdf = gtdf.astype({'Patient ID': str})
+            gtdf.set_index(['Patient ID', 'Right/Left'], drop=True, inplace=True)
+
+            df = gtdf.join(s1df, how='right').join(s2df)
+        else:
+            df = s1df.join(s2df)
+
     else:
-        df = s1df.join(s2df)
+        s1df = pd.read_csv(s1_res, index_col=0) if isinstance(s1_res, str) else s1_res
+        s1df.index = create_mindex(s1df.index)
+        s1df.drop('sum', inplace=True)
+        s1df.drop('avg', inplace=True)
+        s1df.drop('Volume_0', axis=1, inplace=True)
+
+        colnames = list(s1df.columns)
+        rename = {}
+        for sub_str, new_sub_str in {"1": "Air", "2": "MT", "3": "MRC"}.items():
+            for features in ['Volume', 'Perimeter', 'Roundness']:
+                rename['_'.join([features, sub_str])] = '_'.join([features, new_sub_str])
+        s1df.rename(rename, axis=1, inplace=True)
+        s1df.drop('Roundness_Air', axis=1, inplace=True, errors=False)
+        s1df = s1df[['Volume_Air', 'Perimeter_Air',
+                     'Volume_MT', 'Volume_MRC', 'Perimeter_MT', 'Perimeter_MRC', 'Roundness_MT',  'Roundness_MRC']]
+
+        if not gt is None:
+            gtdf = pd.read_csv(gt) if isinstance(gt, str) else gt
+            gtdf = gtdf.astype({'Patient ID': str})
+            gtdf.set_index(['Patient ID', 'Right/Left'], drop=True, inplace=True)
+
+            df = gtdf.join(s1df, how='right')
+        else:
+            df = s1df
+    print(df.to_string())
     return df
 
 
@@ -113,10 +149,9 @@ class Seg2Diag(object):
     def fit(self, df: pd.DataFrame, params=None) -> List[Pipeline]:
         r"""
         For training, the input dataframe should contain the MT and MRC status in the first
-        four columns, the rest are the features used for training.
+        four columns, the rest are the features used for training, which includes the volume, perimeter and roundness
+        of the lesions, and only volume and perimeter for air-space
         """
-
-
         # Drop Ground truth status to get the features
         X = df.drop(df.columns[:4], axis=1)
         mt_y = df['Mucosal Thickening']
@@ -139,7 +174,9 @@ class Seg2Diag(object):
     def predict(self, X):
         return {m: self.models[m].predict(X) for m in self.default_dict}
 
-    def save(self, outfname:str):
+    def save(self, outfname:str = None):
+        if outfname is None:
+            outfname = 's3_seg2diag.msdtks2d'
         if not outfname.endswith('.msdtks2d'):
             outfname += '.msdtks2d'
         _save_content = {'models': self.models,
@@ -156,7 +193,7 @@ class Seg2Diag(object):
     def compute_cutoff(self,
                        X: pd.DataFrame,
                        Y: pd.DataFrame or dict,
-                       method: str = 'youden') -> dict:
+                       method: str = 'union') -> dict:
         r"""
         This method is called by default in `fit` after the models have been fitted.
         For each of the regressed index with respect to MT, MRC and Healthy, a threshold
@@ -190,17 +227,29 @@ class Seg2Diag(object):
                 roc = roc_curve(gt_y, model.predict(X))
                 self.cutoffs[key] = Seg2Diag._cutoff_youdens_j(*roc)
             return self.cutoffs
+        elif method == 'union':
+            for key in self.default_dict:
+                model = self.models[key]
+                gt_y = Y[self.default_dict[key]]
+                # compute ROC
+                roc = roc_curve(gt_y, model.predict(X))
+                auc = roc_auc_score(gt_y, model.predict(X))
+                self.cutoffs[key] = Seg2Diag._index_of_union(*roc, auc)
+            return self.cutoffs
         else:
             raise ArgumentError("Only 'youden' is available now.")
 
     def plot_model_results(self,
                            X: pd.DataFrame,
                            Y: pd.DataFrame,
+                           save_png: str = None,
+                           show_plot: bool = False,
                            ax=None ,**kwargs):
         r"""
         Plot the performance of the model on the given dataset, including t
         """
         import matplotlib.pyplot as plt
+
 
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(8, 8))
@@ -208,13 +257,14 @@ class Seg2Diag(object):
         for key in self.default_dict:
             prediction = self.models[key].predict(X)
             gt = Y[self.default_dict[key]]
-            roc = roc_curve(gt, prediction)
+            roc = roc_curve(gt, prediction, drop_intermediate=False)
             auc = roc_auc_score(gt, prediction)
 
             report = classification_report(gt, prediction >= self.cutoffs[key], output_dict=True)
             sens = report['1']['recall']
             specificity = report['0']['recall']
             ax.plot(roc[0], roc[1], label=f"{key} (AUC: {auc:.02f};Sens:{sens:.02f}, Spec: {specificity:.03f})")
+            ax.plot(1-specificity, sens, 'o')
 
 
         # Plot other stuff
@@ -223,7 +273,17 @@ class Seg2Diag(object):
         ax.set_xlabel('1 - Specificity', fontsize=18)
         ax.set_title('ROC curve for detection of MT and MRC', fontsize=18)
         ax.legend(fontsize=18)
-        plt.show()
+
+        if not save_png is None:
+            out_path = Path(save_png)
+            if not out_path.parent.is_dir():
+                print(f"Cannot save, directory doesn't exist: {out_path.resolve()}")
+            else:
+                plt.savefig(out_path.resolve())
+                plt.cla()
+
+        if show_plot:
+            plt.show()
 
     @staticmethod
     def _cutoff_youdens_j(fpr,tpr,thresholds):
@@ -231,7 +291,29 @@ class Seg2Diag(object):
         j_ordered = sorted(zip(j_scores,fpr, tpr, thresholds))
         return j_ordered[-1][1]
 
+    @staticmethod
+    def _concordance_probability(fpr, tpr, thresholds):
+        r""""""
+        cz = tpr * (1-fpr)
+        i = np.argmax(cz)
+        return thresholds[i]
 
+    @staticmethod
+    def _index_of_union(fpr, tpr, thresholds, auc):
+        r"""
+        Perkins and Schisterman index of union.
+
+        .. math::
+            IU(c) = (|\text{Se}(c) - \text{AUC}| + |\text{Sp}(c)-\text{AUC}|)
+
+            c_{optimal}=\arg \min_c IU(c) + |\text{Se}(c) - \text{Sp}(c)|
+
+        """
+        iu = np.abs(tpr - auc) + np.abs(-fpr+1-auc)
+        d = np.abs(tpr - 1 + fpr)
+
+        C = iu + d
+        return thresholds[np.argmin(iu)]
 #
 #
 if __name__ == '__main__':
