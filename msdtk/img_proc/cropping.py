@@ -69,7 +69,7 @@ def batch_crop_sinuses(dir_pairs: List[Tuple[str, str]],
             except:
                 logger.exception("Unexpected error occured during crop sinus.")
 
-        first_seg = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False,
+        first_set = ImageDataSet(first_in_dir, verbose=True, dtype='uint8', idGlobber=idglobber, debugmode=False,
                                  filtermode='idlist', idlist=idlist)
         idlist = first_set.get_unique_IDs()
 
