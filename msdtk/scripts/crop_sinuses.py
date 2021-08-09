@@ -27,6 +27,7 @@ def crop_sinuses():
 
     dir_pairs = [(a, b) for a, b in zip(args.input_dirs, args.output_dirs)]
     batch_crop_sinuses(dir_pairs,
+                       idlist=args.idlist,
                        num_workers=args.numworker,
                        load_bounds=args.load,
                        save_bounds=args.save,
