@@ -21,7 +21,7 @@ def get_ids_from_files(files: Iterable[Union[str, Path]],
             A list of strings that needs globbing. If a single string is given, its treated as a directory and all the
             files in that directory (non-recursively) that has a suffix '.nii.gz' will be processed.
         idglobber (pattern, Optional):
-            ID
+            ID globbing regex.
         return_dict (bool):
             If true, return dictionary where the keys are the ID globbed and the values are the filename where it's
             globbed.
