@@ -136,14 +136,33 @@ def data_preparation(s1_res, s2_res=None, gt=None):
 
 class Seg2Diag(object):
     def __init__(self):
+        r"""
+        Description:
+            This class is the core predictor for step 3 of the algorith, in which the pathologies MT/MRC were predicted
+            using support vector regression.
+
+        Attributes:
+            default_dict (dict):
+                This dictionary dictates which column of the inputs corresponds to which interested pathologies. The
+                key of the dictionary are the supposed name of the pathology used in this object, the corresponding
+                values are the column names of the input data sheet. One model will be trained for each key.
+
+        Examples:
+            >>> from seg2diag import Seg2Diag, data_preparation
+            >>> s = Seg2Diag()
+            >>> data = data_preparation('s1.csv', 's2.csv', 'gt.csv')
+            >>> s.fit(data)
+
+        """
         super(Seg2Diag, self).__init__()
 
         # This default dict maps the keys to the column name of the target ground-truth in `df`
         self.default_dict = {
             'MT': 'Mucosal Thickening',
             'MRC': 'Cyst',
-            # 'Healthy': 'Healthy'
+            'Healthy': 'Healthy'
         }
+        self.cutoff_method='youden'
         pass
 
     def fit(self, df: pd.DataFrame, params=None) -> List[Pipeline]:
@@ -152,11 +171,8 @@ class Seg2Diag(object):
         four columns, the rest are the features used for training, which includes the volume, perimeter and roundness
         of the lesions, and only volume and perimeter for air-space
         """
-        # Drop Ground truth status to get the features
+        # Drop Ground truth status to get the features, assume first four columns are the ground-truth.
         X = df.drop(df.columns[:4], axis=1)
-        mt_y = df['Mucosal Thickening']
-        mrc_y = df['Cyst']
-        healthy_y = df['Healthy']
 
         # Compute class weights
         self.models = {}
@@ -174,16 +190,54 @@ class Seg2Diag(object):
     def predict(self, X):
         return {m: self.models[m].predict(X) for m in self.default_dict}
 
+    def predict_and_report(self,
+                           X: pd.DataFrame,
+                           report_fname: Union[str, Path],
+                           ground_truth: pd.DataFrame = None
+                           ) -> None:
+        r"""
+        Predict and generate an Excel rerpot. The excel should have two sheets named 'SVR result' and 'Cutoffs'.
+        """
+        prediction = self.predict(X)
+        out = {key: prediction[key] >= self.cutoffs[key] for key in self.default_dict}
+        gt = {key: ground_truth[key] for key in self.default_dict} if  ground_truth is not None else None
+        df_out = pd.DataFrame(X)
+        df_cutoff = pd.DataFrame()
+        out_cols = []
+        for key in prediction:
+            df_out[f'SVR Score - {key}'] = prediction[key]
+            df_out[f'SVR Prediction - {key}'] = out[key]
+            if not gt is None:
+                df_out[f'Diagnosis - {key}'] = gt[key]
+                out_cols.extend([f'SVR Score - {key}', f'SVR Prediction - {key}', f'Diagnosis - {key}'])
+            else:
+                out_cols.extend([f'SVR Score - {key}', f'SVR Prediction - {key}'])
+            df_cutoff = df_cutoff.append(pd.Series(name=key, data=[self.cutoffs[key]]))
+
+        out_fname = Path(report_fname)
+        if out_fname.suffix() != 'xlsx':
+            out_fname = out_fname.with_suffix('xlsx')
+        if not out_fname.parent.is_dir():
+            out_fname.parent.mkdir(parents=True, exist_ok=True)
+            if not out_fname.parent.is_dir():
+                raise IOError(f"Cannot create directory for outputing report at: {out_fname.resolve()}")
+
+        with pd.ExcelWriter(out_fname.resolve()) as writer:
+            df_out[out_cols].to_excel(writer, sheet_name='SVR result')
+            df_cutoff.to_excel(writer, sheet_name='Cutoffs')
+            writer.save()
+
+
     def save(self, outfname:str = None):
         if outfname is None:
             outfname = 's3_seg2diag.msdtks2d'
         if not outfname.endswith('.msdtks2d'):
             outfname += '.msdtks2d'
         _save_content = {'models': self.models,
-                         'cutoffs': self.cutoffs}
+                         'cutoffs': self.cutoffs,
+                         'cutoff_method': self.cutoff_method}
 
         dump(_save_content, outfname)
-        #TODO: also need to save/load the cutoffs
 
     def load(self, infname):
         _loaded_content = load(infname)
@@ -199,10 +253,8 @@ class Seg2Diag(object):
         For each of the regressed index with respect to MT, MRC and Healthy, a threshold
         on the ROC curve is computed using the specified method.
 
-        Currently, only the Younden's index is implemented.
-
         In clinical studies, it is more common to deduce the threshold from the testing set
-        such that performance metrics like sensitivity and specificity can be calculate. IKn
+        such that performance metrics like sensitivity and specificity can be calculate. In
         this case this method should be called again after fitting.
 
         Args:
@@ -212,13 +264,16 @@ class Seg2Diag(object):
                 Ground truth. Table should contains the ground truth binary status for the
                 prediction which are specified in `self.defulat_dict`.
             method (str):
-                (NOT IMPLEMENTED).
+
         """
         self.cutoffs = {}
         # check Y has target
-        assert all([self.default_dict[key] in Y for key in self.default_dict]), "Specifiy"
+        if not all([self.default_dict[key] in Y for key in self.default_dict]):
+            raise AttributeError(f"Requested key {Y.keys()} were not found in: {self.default_dict.keys()}.")
 
-
+        validkeys = ['youden', 'union']
+        assert method in validkeys, f"Available methods are: [{'|'.join(validkeys)}], got '{method}' instead."
+        self.cutoff_method=method
         if method == 'youden':
             for key in self.default_dict:
                 model = self.models[key]
@@ -236,8 +291,7 @@ class Seg2Diag(object):
                 auc = roc_auc_score(gt_y, model.predict(X))
                 self.cutoffs[key] = Seg2Diag._index_of_union(*roc, auc)
             return self.cutoffs
-        else:
-            raise ArgumentError("Only 'youden' is available now.")
+
 
     def plot_model_results(self,
                            X: pd.DataFrame,
@@ -308,42 +362,12 @@ class Seg2Diag(object):
 
             c_{optimal}=\arg \min_c IU(c) + |\text{Se}(c) - \text{Sp}(c)|
 
+        .. Reference::
+
         """
         iu = np.abs(tpr - auc) + np.abs(-fpr+1-auc)
         d = np.abs(tpr - 1 + fpr)
 
         C = iu + d
         return thresholds[np.argmin(iu)]
-#
-#
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    df = data_preparation('../../../Sinus/98.Output/SinusSeg_B00-v1.0_train/Cropped_CNN/label_statistics.csv',
-                           '../../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0_train/Cropped_CNN/label_statistics.csv',
-                           '/home/lwong/FTP/2.Projects/9.Sinus/01.RAW/CBCT_AI_case information.csv')
 
-    df_test = data_preparation('../../../Sinus/98.Output/SinusSeg_B00-v1.0/Cropped_CNN/label_statistics.csv',
-                               '../../../Sinus/98.Output/SinusSeg_lesion_only_B00-v1.0/Cropped_CNN/label_statistics.csv',
-                           '/home/lwong/FTP/2.Projects/9.Sinus/01.RAW/CBCT_AI_case information.csv')
-
-    # df.drop(['Volume_Air', 'Perimeter_Air'], axis=1, inplace=True)
-    # df_test.drop(['Volume_Air', 'Perimeter_Air'], axis=1, inplace=True)
-
-    model = Seg2Diag()
-    model.fit(df)
-
-
-    X = df_test.drop(df.columns[:4], axis=1)
-    mt_y = df_test['Mucosal Thickening']
-    mrc_y = df_test['Cyst']
-    healthy_y = df_test['Healthy']
-
-    plt.style.use('ggplot')
-    model.compute_cutoff(X, df_test)
-    Y = model.predict(X)
-    model.plot_model_results(X, df_test)
-    X['MT'] = Y['MT']
-    X['MRC'] = Y['MRC']
-    print(X.to_string())
-    print(model.cutoffs)
-    model.save('./test_save')
