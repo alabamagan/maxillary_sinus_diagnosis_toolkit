@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Union, Optional, Iterable
 import fnmatch
 
+__all__ = ['get_distribution', 'batch_get_distribtuion', 'plot_hist']
+
 def get_distribution(img_dir: Union[str, Path],
                      bins: Optional[int] = 200,
                      masking_method: Optional[str] = None,
