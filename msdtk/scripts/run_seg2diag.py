@@ -75,33 +75,19 @@ def inference_seg2diag():
 
         if args.outfile is not None:
             roc_fname = Path(args.outfile)
-            roc_fname = roc_fname.parent.joinpath('ROC_results.png')
+            roc_fname = roc_fname.with_suffix('.png')
             parser.logger.info(f"Writing ROC plot to: {roc_fname}")
         else:
             roc_fname = None
         model.plot_model_results(df, df_gt, show_plot=args.plot, save_png=roc_fname)
+    else:
+        df_gt = None
 
 
     # Generate prediction report
-    out_cols = []
-    df_out = pd.DataFrame(df)
-    df_cutoff = pd.DataFrame()
+    if not args.outfile is None:
+        parser.logger.info(f"Saving to: {args.outfile}")
+        model.predict_and_report(df, args.outfile, df_gt)
 
-    out = {key: predict[key] >= model.cutoffs[key] for key in model.default_dict}
-    for key in predict:
-        df_out[f'SVR Score - {key}'] = predict[key]
-        df_out[f'SVR Prediction - {key}'] = out[key]
-        out_cols.extend([f'SVR Score - {key}', f'SVR Prediction - {key}'])
-        df_cutoff = df_cutoff.append(pd.Series(name=key, data=[model.cutoffs[key]]))
-
-    if args.outfile is not None:
-        output_path = args.outfile
-        output_path = output_path + '.xlsx' if not output_path.endswith('.xlsx') else output_path
-
-        with pd.ExcelWriter(output_path) as writer:
-            df_out[out_cols].to_excel(writer, sheet_name='SVR result')
-            df_cutoff.to_excel(writer, sheet_name='Youden Cutoffs')
-            writer.save()
-
-    return df_out[out_cols], df_cutoff
+    return
 

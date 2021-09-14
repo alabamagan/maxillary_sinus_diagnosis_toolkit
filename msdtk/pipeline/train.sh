@@ -155,8 +155,17 @@ step3(){
   echo "Cropping the input into left and right sinuses"
 
   ## Prepare arguments
-  S1_CROP_PAIR="-i ${OUTPUT_DIR}/S1_output_train -o ${OUTPUT_DIR}/Cropped_S1_train"
-  S2_CROP_PAIR="-i ${OUTPUT_DIR}/S2_output_train -o ${OUTPUT_DIR}/Cropped_S2_train"
+  S1_OUTPUT=${OUTPUT_DIR}/S1_output
+  S2_OUTPUT=${OUTPUT_DIR}/S2_output
+  S1_OUTPUT_CROPPED=${OUTPUT_DIR}/Cropped_S1
+  S2_OUTPUT_CROPPED=${OUTPUT_DIR}/Cropped_S2
+  S1_OUTPUT_CROPPED_POST_PROC=${S1_OUTPUT_CROPPED}_PP
+  S2_OUTPUT_CROPPED_POST_PROC=${S2_OUTPUT_CROPPED}_PP
+  S1_CROP_PAIR="-i ${S1_OUTPUT} -o ${S1_OUTPUT_CROPPED}"
+  S2_CROP_PAIR="-i ${S2_OUTPUT} -o ${S2_OUTPUT_CROPPED}"
+  S1_CROPPED_GT="${OUTPUT_DIR}/Cropped_S1_GT"
+  S2_CROPPED_GT="${OUTPUT_DIR}/Cropped_S2_GT"
+  IMG_CROP_PAIR="-i ${S1_INPUT_DIR} -o ${OUTPUT_DIR}/Cropped_IMG"
   GT_S1_CROP_PAIR=""
   GT_S2_CROP_PAIR=""
   ## If ground truth is provided, also crop the manually segmented labels
@@ -164,42 +173,35 @@ step3(){
   if [[ -d ${GROUND_TRUTH}/Air-space ]]
   then
     echo "Also crop ground-truth for step 1"
-    GT_S1_CROP_PAIR="-i ${GROUND_TRUTH}/Air-space -o ${OUTPUT_DIR}/Cropped_S1_train_GT"
+    GT_S1_CROP_PAIR="-i ${GROUND_TRUTH}/Air-space -o ${S1_CROPPED_GT}"
   fi
   ### For Step 2
   if [[ -d ${GROUND_TRUTH}/Lesion-only ]]
   then
     echo "Also crop ground-truth for step 2"
-      GT_S2_CROP_PAIR="-i ${GROUND_TRUTH}/Lesion-only -o ${OUTPUT_DIR}/Cropped_S2_train_GT"
+      GT_S2_CROP_PAIR="-i ${GROUND_TRUTH}/Lesion-only -o ${S2_CROPPED_GT}"
   fi
 
-  msdtk-crop_sinuses ${S1_CROP_PAIR} ${S2_CROP_PAIR} ${GT_S1_CROP_PAIR} ${GT_S2_CROP_PAIR} --save-bounds -g "^[0-9]+" -n $NUM_THREAD ${_V_FLAG}
+  msdtk-crop_sinuses ${S1_CROP_PAIR} ${S2_CROP_PAIR} ${GT_S1_CROP_PAIR} ${GT_S2_CROP_PAIR} ${IMG_CROP_PAIR} --save-bounds -g "^[0-9]+" -n $NUM_THREAD ${_V_FLAG} --skip
+
+  ## Postprocessing of the lesion label
+  msdtk-post_processing -s1 ${S1_OUTPUT_CROPPED} -s2 ${S2_OUTPUT_CROPPED} -o ${OUTPUT_DIR}/Cropped_PP/ -n ${NUM_THREAD} ${_V_FLAG}
+  msdtk-post_processing -s1 ${S1_CROPPED_GT} -s2 ${S2_CROPPED_GT} -o ${OUTPUT_DIR}/Cropped_GT/ -n ${NUM_THREAD} ${_V_FLAG} --skip-proc
 
   ## create label statistics in the testing data
   ##---------------------------------------------
-  S1_LABEL_STAT=${OUTPUT_DIR}/Cropped_S1_train/lab_stat.csv
-  S2_LABEL_STAT=${OUTPUT_DIR}/Cropped_S2_train/lab_stat.csv
-  msdtk-label_statistics -i ${OUTPUT_DIR}/Cropped_S1_train -o ${S1_LABEL_STAT} -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
-  msdtk-label_statistics -i ${OUTPUT_DIR}/Cropped_S2_train -o ${S2_LABEL_STAT} -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
+  msdtk-label_statistics -i ${OUTPUT_DIR}/Cropped_GT -o ${OUTPUT_DIR}/Cropped_GT/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
 
   ## Compute segmentation result
   ##----------------------------
-  if [[ -d ${OUTPUT_DIR}/Cropped_S1 && -d ${OUTPUT_DIR}/Cropped_S1_GT ]]
-  then
-    pmi-analysis_segment -a --test-data=${OUTPUT_DIR}/Cropped_S1_train --gt-data=${OUTPUT_DIR}/Cropped_S1_GT --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${OUTPUT_DIR}/Cropped_S1_train_result.csv
-  fi
-  if [[ -d ${OUTPUT_DIR}/Cropped_S2 && -d ${OUTPUT_DIR}/Cropped_S2_GT ]]
-  then
-    pmi-analysis_segment -a --test-data=${OUTPUT_DIR}/Cropped_S2_train --gt-data=${OUTPUT_DIR}/Cropped_S2_GT --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${OUTPUT_DIR}/Cropped_S2_train_result.csv
-  fi
+  pmi-analysis_segment -a --test-data=${OUTPUT_DIR}/Cropped_PP --gt-data=${OUTPUT_DIR}/Cropped_GT --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${OUTPUT_DIR}/Cropped_AllClasses_result.xlsx
 
-  # Save trained model and perform inference and save the results
-  S3_MODEL_FILE_MT=${OUTPUT_DIR}/seg2deg_mt.msdtk
-  S3_MODEL_FILE_MRC=${OUTPUT_DIR}/seg2deg_mrc.msdtk
-  S3_MODEL_FILE_HEALTHY=${OUTPUT_DIR}/seg2deg_healthy.msdtk
+  # load trained model and perform inference and save the results
+  S3_MODEL_DIR=${CHECKPOINTS_DIR}/s3_seg2diag.msdtks2d
+  S3_GT_DIR=${GROUND_TRUTH}/datasheet.csv
 
-  msdtk-seg2diag_train --s1-res=${S1_LABEL_STAT} --s2-res=${S2_LABEL_STAT} --ground-truth=${GROUND_TRUTH}/datasheet.csv -g "^[0-9]+_(L|R)"
-
+  # If ground truth is provided, generate performance report for classification
+  msdtk-seg2diag_inference -s1 ${OUTPUT_DIR}/Cropped_PP/lab_stat.csv -s2 -i ${S3_MODEL_DIR} -v -o ${OUTPUT_DIR}/S3_results.xlsx -gt ${S3_GT_DIR}
   return 0
 }
 

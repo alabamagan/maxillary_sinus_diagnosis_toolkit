@@ -200,7 +200,7 @@ class Seg2Diag(object):
         """
         prediction = self.predict(X)
         out = {key: prediction[key] >= self.cutoffs[key] for key in self.default_dict}
-        gt = {key: ground_truth[key] for key in self.default_dict} if  ground_truth is not None else None
+        gt = {key: ground_truth[self.default_dict[key]] for key in self.default_dict} if ground_truth is not None else None
         df_out = pd.DataFrame(X)
         df_cutoff = pd.DataFrame()
         out_cols = []
@@ -215,8 +215,8 @@ class Seg2Diag(object):
             df_cutoff = df_cutoff.append(pd.Series(name=key, data=[self.cutoffs[key]]))
 
         out_fname = Path(report_fname)
-        if out_fname.suffix() != 'xlsx':
-            out_fname = out_fname.with_suffix('xlsx')
+        if out_fname.suffix != '.xlsx':
+            out_fname = out_fname.with_suffix('.xlsx')
         if not out_fname.parent.is_dir():
             out_fname.parent.mkdir(parents=True, exist_ok=True)
             if not out_fname.parent.is_dir():
@@ -235,7 +235,8 @@ class Seg2Diag(object):
             outfname += '.msdtks2d'
         _save_content = {'models': self.models,
                          'cutoffs': self.cutoffs,
-                         'cutoff_method': self.cutoff_method}
+                         'cutoff_method': self.cutoff_method,
+                         'default_dict': self.default_dict}
 
         dump(_save_content, outfname)
 

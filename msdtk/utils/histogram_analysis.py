@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union, Optional, Iterable
 import fnmatch
 
-__all__ = ['get_distribution', 'batch_get_distribtuion', 'plot_hist']
+__all__ = ['batch_get_distribtuion', 'plot_hist']
 
 def get_distribution(img_dir: Union[str, Path],
                      bins: Optional[int] = 200,
@@ -124,8 +124,9 @@ def batch_get_distribtuion(imgs_dir: Union[str, Path, Iterable[Union[str, Path]]
     return hists
 
 
-def plot_hist(hists: np.Array,
+def plot_hist(hists: np.ndarray,
               ax: Optional[plt.Axes] = None,
+              *args,
               **kwargs) -> None:
     r"""
     Plot the histogram obtained from `batch_get_histogram`
@@ -136,5 +137,5 @@ def plot_hist(hists: np.Array,
         fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     for i in range(hists.shape[0]):
-        ax.plot(hists[i, 1], hists[i, 0], **kwargs)
+        ax.plot(hists[i, 1], hists[i, 0], *args, **kwargs)
     plt.show()

@@ -33,15 +33,17 @@ OUTPUT_DIR=""
 CHECKPOINTS_DIR=""
 INTER_FILES_DIR=/tmp/intermediate_files
 NUM_THREAD=16
+FORCE_TRAIN_DATA="No"
 STEP="123"
 _V_FLAG=""
 GROUND_TRUTH=""
-while getopts 'hi:o:m:n:c:s:b:g:vks' OPT; do
+while getopts 'hfi:o:m:n:c:s:b:g:vks' OPT; do
   case $OPT in
     i) S1_INPUT_DIR=`realpath "$OPTARG"`;;
     o) OUTPUT_DIR=`realpath "$OPTARG"`;;
     c) CHECKPOINTS_DIR=`realpath "$OPTARG"`;;
     b) BATCH_SIZE="$OPTARG";;
+    f) FORCE_TRAIN_DATA="Yes";;
     k) NORMALIZE_FLAG=1;;
     s) STEP="$OPTARG";;
     v) _V_FLAG="--verbose";;
@@ -110,7 +112,7 @@ step1() {
 
 
   cd "${SCRIPT_PATH}/../../" || return 1
-  pmi-main --config=pmi_config/Seg_S1.ini ${_V_FLAG} --override="(Checkpoint,cp_load_dir)=$S1_CHECKPOINT;(Data,input_dir)=${S1_INPUT_DIR};(Data,prob_map_dir)=${MASK};(Data,output_dir)=${OUTPUT_DIR}/S1_output;(Data,target_dir)=${GROUND_TRUTH}/Air-space;(General,force_train_data)=No" --inference
+  pmi-main --config=pmi_config/Seg_S1.ini ${_V_FLAG} --override="(Checkpoint,cp_load_dir)=$S1_CHECKPOINT;(Data,input_dir)=${S1_INPUT_DIR};(Data,prob_map_dir)=${MASK};(Data,output_dir)=${OUTPUT_DIR}/S1_output;(Data,target_dir)=${GROUND_TRUTH}/Air-space;(General,force_train_data)=${FORCE_TRAIN_DATA}" --inference
   return 0
 }
 
@@ -139,7 +141,7 @@ step2() {
   fi
 
   cd "${SCRIPT_PATH}/../../" || return 1
-  pmi-main --config=pmi_config/Seg_S2.ini ${_V_FLAG} --override="(Checkpoint,cp_load_dir)=$S2_CHECKPOINT;(Data,input_dir)=${S1_INPUT_DIR};(Data,prob_map_dir)=${MASK};(Data,output_dir)=${OUTPUT_DIR}/S2_output;(Data,target_dir)=${GROUND_TRUTH}/Lesion-only;(General,force_train_data)=No;" --inference
+  pmi-main --config=pmi_config/Seg_S2.ini ${_V_FLAG} --override="(Checkpoint,cp_load_dir)=$S2_CHECKPOINT;(Data,input_dir)=${S1_INPUT_DIR};(Data,prob_map_dir)=${MASK};(Data,output_dir)=${OUTPUT_DIR}/S2_output;(Data,target_dir)=${GROUND_TRUTH}/Lesion-only;(General,force_train_data)=${FORCE_TRAIN_DATA}" --inference
 
   return 0
 }
@@ -188,42 +190,21 @@ step3(){
   ## Postprocessing of the lesion label
   msdtk-post_processing -s1 ${S1_OUTPUT_CROPPED} -s2 ${S2_OUTPUT_CROPPED} -o ${OUTPUT_DIR}/Cropped_PP/ -n ${NUM_THREAD} ${_V_FLAG}
   msdtk-post_processing -s1 ${S1_CROPPED_GT} -s2 ${S2_CROPPED_GT} -o ${OUTPUT_DIR}/Cropped_GT/ -n ${NUM_THREAD} ${_V_FLAG} --skip-proc
+
   ## create label statistics in the testing data
   ##---------------------------------------------
-#  msdtk-label_statistics -i ${S1_OUTPUT_CROPPED} -o ${S1_OUTPUT_CROPPED}/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
-#  msdtk-label_statistics -i ${S2_OUTPUT_CROPPED} -o ${S2_OUTPUT_CROPPED}/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
-#  msdtk-label_statistics -i ${S1_OUTPUT_CROPPED_POST_PROC} -o ${S1_OUTPUT_CROPPED_POST_PROC}/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
-#  msdtk-label_statistics -i ${S2_OUTPUT_CROPPED_POST_PROC} -o ${S2_OUTPUT_CROPPED_POST_PROC}/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
   msdtk-label_statistics -i ${OUTPUT_DIR}/Cropped_GT -o ${OUTPUT_DIR}/Cropped_GT/lab_stat.csv -g "^[0-9]+_(L|R)" -n $NUM_THREAD ${_V_FLAG}
 
   ## Compute segmentation result
   ##----------------------------
-#  if [[ -d ${S1_OUTPUT_CROPPED} && -d ${S1_CROPPED_GT} ]]
-#  then
-#    pmi-analysis_segment -a --test-data=${S1_OUTPUT_CROPPED} --gt-data=${S1_CROPPED_GT} --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${S1_OUTPUT_CROPPED}_result.xlsx
-#  fi
-#  if [[ -d ${S2_OUTPUT_CROPPED} && -d ${S2_CROPPED_GT} ]]
-#  then
-#    pmi-analysis_segment -a --test-data=${S2_OUTPUT_CROPPED} --gt-data=${S2_CROPPED_GT} --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${S2_OUTPUT_CROPPED}_result.xlsx
-#  fi
-#  if [[ -d ${S1_OUTPUT_CROPPED_POST_PROC} && -d ${S1_CROPPED_GT} ]]
-#  then
-#    pmi-analysis_segment -a --test-data=${S1_OUTPUT_CROPPED_POST_PROC} --gt-data=${S1_CROPPED_GT} --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${S1_OUTPUT_CROPPED_POST_PROC}_result.xlsx
-#  fi
-#  if [[ -d ${S2_OUTPUT_CROPPED_POST_PROC} && -d ${S2_CROPPED_GT} ]]
-#  then
-#    pmi-analysis_segment -a --test-data=${S2_OUTPUT_CROPPED_POST_PROC} --gt-data=${S2_CROPPED_GT} --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${S2_OUTPUT_CROPPED_POST_PROC}_result.xlsx
-#  fi
-
   pmi-analysis_segment -a --test-data=${OUTPUT_DIR}/Cropped_PP --gt-data=${OUTPUT_DIR}/Cropped_GT --id-globber="^[0-9]+_(L|R)" ${_V_FLAG} --save ${OUTPUT_DIR}/Cropped_AllClasses_result.xlsx
 
-  return 0
   # load trained model and perform inference and save the results
   S3_MODEL_DIR=${CHECKPOINTS_DIR}/s3_seg2diag.msdtks2d
   S3_GT_DIR=${GROUND_TRUTH}/datasheet.csv
 
   # If ground truth is provided, generate performance report for classification
-  msdtk-seg2diag_inference -s1 ${S1_OUTPUT_CROPPED_POST_PROC}/lab_stat.csv -s2 ${S2_OUTPUT_CROPPED_POST_PROC}/lab_stat.csv -i ${S3_MODEL_DIR} -v -o ${OUTPUT_DIR}/S3_results.xlsx -gt ${S3_GT_DIR}
+  msdtk-seg2diag_inference -s1 ${OUTPUT_DIR}/Cropped_PP/lab_stat.csv -i ${S3_MODEL_DIR} -v -o ${OUTPUT_DIR}/S3_results.xlsx -gt ${S3_GT_DIR}
   return 0
 }
 
